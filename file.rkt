@@ -46,7 +46,7 @@
 (define (set-reg n v) (bytes-set! (chip8-state-regs state) n v))
 
 ; Helpers to handle other operations
-(define (clear-display) (printf "> clear display\n"))
+(define (clear-display) ("clear display"))
 
 (define (take-step)
   (define current-instr
@@ -56,44 +56,77 @@
   (define (masked mask) (bitwise-and current-instr mask))
   (define (hex-form? mask value) (= (masked mask) value))
 
+  (define x (get-reg (/ (masked #x0f00) #x100)))
+  (define y (get-reg (/ (masked #x00f0) #x10)))
+  (define kk (bitwise-and current-instr #x00ff))
+  (define nnn (bitwise-and current-instr #x0fff))
 
   (printf "~x\n" current-instr)
 
   (cond
-    [(= current-instr #x00e0) (clear-display) (increment-pc)]
+    [(= current-instr #x00e0) (increment-pc) (clear-display)]
 
-    [(= current-instr #x00ee) (set-pc (pop-stack))]
+    [(= current-instr #x00ee) (set-pc (pop-stack)) "pop from stack"]
 
     [(hex-form? #xf000 #x1000)
      (increment-pc)
-     (set-pc (masked #x0fff))]
+     (set-pc nnn)
+     "absolute jump"]
 
     [(hex-form? #xf000 #x2000)
      (increment-pc)
      (push-stack (get-pc))
-     (set-pc (masked #x0fff))
+     (set-pc nnn)
+     "call"
      ]
 
     [(hex-form? #xf000 #x3000)
-     (let (
-           [reg-val (get-reg (/ (masked #x0f00) #x100))]
-           [cmp-val (bitwise-and current-instr #x00ff)])
-
-       (if (= reg-val cmp-val) (begin (increment-pc) (increment-pc)) (increment-pc)))
+     (if (= (get-reg x) kk) (begin (increment-pc) (increment-pc)) (increment-pc))
+     "jump reg value equal"
      ]
 
     [(hex-form? #xf000 #x4000)
-     (let (
-           [reg-val (get-reg (/ (masked #x0f00) #x100))]
-           [cmp-val (bitwise-and current-instr #x00ff)])
-
-       (if (= reg-val cmp-val) (increment-pc) (begin (increment-pc) (increment-pc))))
+     (if (= (get-reg x) kk) (increment-pc) (begin (increment-pc) (increment-pc)))
+     "jump reg value not equal"
      ]
 
+    [(hex-form? #xf00f #x5000)
+     (if (= (get-reg x) (get-reg y)) (begin (increment-pc) (increment-pc)) (increment-pc))
+     "jump reg reg equal"
+     ]
 
+    [(hex-form? #xf000 #x6000)
+     (set-reg x kk)
+     (increment-pc)
+     "load register"]
+
+    [(hex-form? #xf000 #x7000)
+     (set-reg x (+ (get-reg x) kk))
+     (increment-pc)
+     "add to register"]
+
+    [(hex-form? #xf00f #x8000)
+     (set-reg x (get-reg y))
+     (increment-pc)
+     "set reg x = reg y"]
+
+    [(hex-form? #xf00f #x8001)
+     (set-reg x (bitwise-ior (get-reg x) (get-reg y)))
+     (increment-pc)
+     "bitwise or"]
+
+    [(hex-form? #xf00f #x8002)
+     (set-reg x (bitwise-and (get-reg x) (get-reg y)))
+     (increment-pc)
+     "bitwise and"]
+
+    [(hex-form? #xf00f #x8003)
+     (set-reg x (bitwise-xor (get-reg x) (get-reg y)))
+     (increment-pc)
+     "bitwise xor"]
+
+    [else (increment-pc) "unrecognized command"]
     )
   )
 
-(take-step)
-(clear-display)
-(clear-display)
+(display (string-append (take-step) "\n"))
