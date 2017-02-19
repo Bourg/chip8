@@ -19,12 +19,13 @@
                   #x200
                   '()
                   (make-bytes 16)
-                  #x0))
+                  #x0
+                  ))
 
+  ; Move the program to memory address 0x200 in the emulator
   (bytes-copy! (chip8-state-memory state) #x200 program-bytes)
 
-  state
-  )
+  state)
 
 ; This is the program state that will be modified 
 (define state (load-program filename))
@@ -130,7 +131,46 @@
      (increment-pc)
      "bitwise xor"]
 
-    ; TODO Missing Instructions
+    ; Addition
+    [(hex-form? #xf00f #x8004)
+     (let ([res (+ (get-reg x) (get-reg y))])
+           (begin
+             (set-reg x (modulo res #x100))
+             (set-reg #xf (if (> res #xff) 1 0))))
+     (increment-pc)
+     "add"]
+
+    ; Subtraction
+    [(hex-form? #xf00f #x8005)
+     (let ([res (- (get-reg x) (get-reg y))])
+           (begin
+             (set-reg x (modulo res #x100))
+             (set-reg #xf (if (< res 0) 1 0))))
+     (increment-pc)
+     "subtract"]
+
+    ; Divide
+    [(hex-form? #xf00f #x8006)
+     (set-reg #xf (bitwise-and #x1 (get-reg y)))
+     (set-reg x (arithmetic-shift (get-reg y) (- 1)))
+     (increment-pc)
+     "divide"]
+
+    ; Subtraction 2
+    [(hex-form? #xf00f #x8007)
+     (let ([res (- (get-reg y) (get-reg x))])
+           (begin
+             (set-reg x (modulo res #x100))
+             (set-reg #xf (if (< res 0) 1 0))))
+     (increment-pc)
+     "subtract backwards"]
+
+    ; Multiplication
+    [(hex-form? #xf00f #x800e)
+     (set-reg #xf (bitwise-and #x80 (get-reg y)))
+     (set-reg x (arithmetic-shift (get-reg y) 1))
+     (increment-pc)
+     "multiply"]
 
     [(hex-form? #xf00f #x9000)
      (if (= (get-reg x) (get-reg y)) (increment-pc) (begin (increment-pc) (increment-pc)))
@@ -147,15 +187,22 @@
      (set-pc (+ nnn (get-reg 0)))
      "jump by val of reg 0 plus nnn"]
 
-    [(hex-form? #xf000 #xb000)
-     (set-pc (+ nnn (get-reg 0)))
-     "jump by val of reg 0 plus nnn"]
-
     [(hex-form? #xf000 #xc000)
      (set-reg x (bitwise-and (random 256) kk))
      "random number into register"]
 
-    ; The rest
+    ; Dxyn - Graphics
+    ; Ex9E - Graphics
+    ; ExA1 - Graphics
+    ; Fx07 - Load delay timer
+    ; Fx0A - Graphics
+    ; Fx15 - Set delay timer
+    ; Fx18 - Set sound timer
+    ; Fx1E - Addition with I
+    ; Fx29 - Load sprite memory address
+    ; Fx33 - Store VX in weird representation
+    ; Fx55 - Store registers in memory
+    ; Fx65 - Read registers from memory
 
     [else (increment-pc) "unrecognized command"]
     )
