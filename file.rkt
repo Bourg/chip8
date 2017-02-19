@@ -2,7 +2,7 @@
 
 (define filename "roms/TANK")
 
-(struct chip8-state (memory [pc #:mutable] [stack #:mutable] regs))
+(struct chip8-state (memory [pc #:mutable] [stack #:mutable] regs [reg-i #:mutable]))
 
 (define (load-program filename)
   ; First, read input into a byte string
@@ -18,7 +18,8 @@
                   (make-bytes #x1000)
                   #x200
                   '()
-                  (make-bytes 16)))
+                  (make-bytes 16)
+                  #x0))
 
   (bytes-copy! (chip8-state-memory state) #x200 program-bytes)
 
@@ -45,6 +46,9 @@
 (define (get-reg n) (bytes-ref (chip8-state-regs state) n))
 (define (set-reg n v) (bytes-set! (chip8-state-regs state) n v))
 
+(define (get-i) (chip8-state-reg-i state))
+(define (set-i v) (set-chip8-state-reg-i! state v))
+
 ; Helpers to handle other operations
 (define (clear-display) ("clear display"))
 
@@ -54,12 +58,13 @@
        (bytes-ref (get-memory) (+ 1 (get-pc)))))
 
   (define (masked mask) (bitwise-and current-instr mask))
+
   (define (hex-form? mask value) (= (masked mask) value))
 
   (define x (get-reg (/ (masked #x0f00) #x100)))
   (define y (get-reg (/ (masked #x00f0) #x10)))
-  (define kk (bitwise-and current-instr #x00ff))
-  (define nnn (bitwise-and current-instr #x0fff))
+  (define kk (masked #x00ff))
+  (define nnn (masked #x0fff))
 
   (printf "~x\n" current-instr)
 
@@ -125,8 +130,55 @@
      (increment-pc)
      "bitwise xor"]
 
+    ; TODO Missing Instructions
+
+    [(hex-form? #xf00f #x9000)
+     (if (= (get-reg x) (get-reg y)) (increment-pc) (begin (increment-pc) (increment-pc)))
+     (increment-pc)
+     "jump reg reg not equal"
+     ]
+
+    [(hex-form? #xf000 #xa000)
+     (set-i nnn)
+     (increment-pc)
+     "load reg i"]
+
+    [(hex-form? #xf000 #xb000)
+     (set-pc (+ nnn (get-reg 0)))
+     "jump by val of reg 0 plus nnn"]
+
+    [(hex-form? #xf000 #xb000)
+     (set-pc (+ nnn (get-reg 0)))
+     "jump by val of reg 0 plus nnn"]
+
+    [(hex-form? #xf000 #xc000)
+     (set-reg x (bitwise-and (random 256) kk))
+     "random number into register"]
+
+    ; The rest
+
     [else (increment-pc) "unrecognized command"]
     )
   )
 
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
+(display (string-append (take-step) "\n"))
 (display (string-append (take-step) "\n"))
