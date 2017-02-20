@@ -24,6 +24,25 @@
 
   ; Move the program to memory address 0x200 in the emulator
   (bytes-copy! (chip8-state-memory state) #x200 program-bytes)
+  
+  ; Load the built in sprites - decimals
+  (bytes-copy! (chip8-state-memory state) 0 #"\360\220\220\220\360")
+  (bytes-copy! (chip8-state-memory state) 5 #"\040\140\040\040\160")
+  (bytes-copy! (chip8-state-memory state) 10 #"\360\020\360\200\360")
+  (bytes-copy! (chip8-state-memory state) 15 #"\360\020\360\020\360")
+  (bytes-copy! (chip8-state-memory state) 20 #"\220\220\360\020\020")
+  (bytes-copy! (chip8-state-memory state) 25 #"\360\200\360\020\360")
+  (bytes-copy! (chip8-state-memory state) 30 #"\360\200\360\220\360")
+  (bytes-copy! (chip8-state-memory state) 35 #"\360\020\040\200\200")
+  (bytes-copy! (chip8-state-memory state) 40 #"\360\220\360\220\360")
+  (bytes-copy! (chip8-state-memory state) 45 #"\360\220\360\020\360")
+  ; And now hex
+  (bytes-copy! (chip8-state-memory state) 50 #"\360\220\360\220\220")
+  (bytes-copy! (chip8-state-memory state) 55 #"\340\220\340\220\340")
+  (bytes-copy! (chip8-state-memory state) 60 #"\360\200\200\200\360")
+  (bytes-copy! (chip8-state-memory state) 65 #"\340\220\220\220\340")
+  (bytes-copy! (chip8-state-memory state) 70 #"\360\200\360\200\360")
+  (bytes-copy! (chip8-state-memory state) 75 #"\360\200\360\200\200")
 
   state)
 
@@ -31,7 +50,7 @@
 (define state (load-program filename))
 
 ; Memory operations
-(define (get-memory) (chip8-state-memory state))
+(define memory (chip8-state-memory state))
 
 ; Stack operations
 (define (pop-stack) (match (chip8-state-stack state)
@@ -50,13 +69,33 @@
 (define (get-i) (chip8-state-reg-i state))
 (define (set-i v) (set-chip8-state-reg-i! state v))
 
+; Timer stuff
+(struct timer-info ([value #:mutable] [last-set #:mutable]))
+
+(define delay-timer (timer-info 0 0))
+(define sound-timer (timer-info 0 0))
+
+(define (set-timer! timer time)
+  (set-timer-info-value! timer time)
+  (set-timer-info-last-set! timer (current-milliseconds)))
+(define (tick-timer! timer)
+  (when (>= (- (current-milliseconds) (timer-info-last-set timer)) 1000)
+    (begin
+      (set-timer-info-value! timer (- (timer-info-value timer) 1))
+      (set-timer-info-last-set! timer (current-milliseconds)))))
+(define (tick-timers!)
+  (tick-timer! delay-timer)
+  (tick-timer! sound-timer))
+(define (timer-active? timer) (> (timer-info-value timer) 0))
+
+
 ; Helpers to handle other operations
 (define (clear-display) ("clear display"))
 
 (define (take-step)
   (define current-instr
-    (+ (* (bytes-ref (get-memory) (get-pc)) #x100)
-       (bytes-ref (get-memory) (+ 1 (get-pc)))))
+    (+ (* (bytes-ref memory (get-pc)) #x100)
+       (bytes-ref memory (+ 1 (get-pc)))))
 
   (define (masked mask) (bitwise-and current-instr mask))
 
@@ -68,6 +107,7 @@
   (define nnn (masked #x0fff))
 
   (printf "~x\n" current-instr)
+  (tick-timers!)
 
   (cond
     [(= current-instr #x00e0) (increment-pc) (clear-display)]
@@ -168,7 +208,7 @@
     ; Multiplication
     [(hex-form? #xf00f #x800e)
      (set-reg #xf (bitwise-and #x80 (get-reg y)))
-     (set-reg x (arithmetic-shift (get-reg y) 1))
+     (set-reg x (modulo (arithmetic-shift (get-reg y) 1) #x100))
      (increment-pc)
      "multiply"]
 
@@ -189,43 +229,68 @@
 
     [(hex-form? #xf000 #xc000)
      (set-reg x (bitwise-and (random 256) kk))
+     (increment-pc)
      "random number into register"]
 
     ; Dxyn - Graphics
-    ; Ex9E - Graphics
-    ; ExA1 - Graphics
-    ; Fx07 - Load delay timer
-    ; Fx0A - Graphics
-    ; Fx15 - Set delay timer
-    ; Fx18 - Set sound timer
-    ; Fx1E - Addition with I
-    ; Fx29 - Load sprite memory address
-    ; Fx33 - Store VX in weird representation
-    ; Fx55 - Store registers in memory
-    ; Fx65 - Read registers from memory
+
+    ; Ex9E - Keypress jump
+    ; ExA1 - Keypress jump
+
+    ; Load delay timer
+    [(hex-form? #xf0ff #xf007)
+     (set-reg x (timer-info-value delay-timer))
+     (increment-pc)
+     "load delay timer"]
+
+    ; Fx0A - Keypress block
+
+    ; Set delay timer
+    [(hex-form? #xf0ff #xf015)
+     (set-timer! delay-timer (get-reg x))
+     (increment-pc)
+     "set delay timer"]
+
+    ; Set sound timer
+    [(hex-form? #xf0ff #xf018)
+     (set-timer! sound-timer (get-reg x))
+     (increment-pc)
+     "set sound timer"]
+
+    ; Addition with I
+    [(hex-form? #xf0ff #xf01e)
+     (set-i (modulo (+ (get-i) (get-reg x)) #x1000))
+     (increment-pc)
+     "add to reg i"]
+
+    ; Load prebake sprite memory address
+    [(hex-form? #xf0ff #xf029)
+     (set-i (* 5 (get-reg x)))
+     (increment-pc)
+     "load prebake sprite"]
+
+    ; Store BCD
+    [(hex-form? #xf0ff #xf033)
+     (bytes-set! memory (get-i) (truncate (/ (get-reg x) 100)))
+     (bytes-set! memory (+ 1 (get-i)) (truncate (/ (modulo (get-reg x) 100) 10)))
+     (bytes-set! memory (+ 2 (get-i)) (modulo (get-reg x) 10))
+     (increment-pc)
+     "store fx in weird form (BCD)"]
+
+    ; Store registers in memory
+    [(hex-form? #xf0ff #xf055)
+     (for ([i (+ x 1)]) (bytes-set! memory (+ (get-i) i) (get-reg i)))
+     (increment-pc)
+     "store registers"]
+
+    ; Read registers from memory
+    [(hex-form? #xf0ff #xf065)
+     (for ([i (+ x 1)]) (set-reg i (bytes-ref memory (+ (get-i) i))))
+     (increment-pc)
+     "load registers"]
 
     [else (increment-pc) "unrecognized command"]
     )
   )
 
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
-(display (string-append (take-step) "\n"))
+(for ([i 100]) (display (string-append (take-step) "\n")))
